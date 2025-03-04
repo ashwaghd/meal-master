@@ -1,13 +1,17 @@
 // app/recipes/page.tsx
 import { createClient } from '@/utils/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
+import { Table, TableHeader, TableRow, TableHead, TableBody } from '@/components/ui/table';
 import AddRecipeForm from '@/components/AddRecipeForm';
+import RecipeRow from '@/components/RecipeRow';
 
 export default async function Recipes() {
   // Initialize Supabase client and fetch data
   const supabase = await createClient();
-  const { data: recipes, error } = await supabase.from('recipes').select();
+  const { data: recipes, error } = await supabase
+    .from('recipes')
+    .select()
+    .order('id', { ascending: true });
 
   if (error) {
     return (
@@ -32,17 +36,7 @@ export default async function Recipes() {
           </TableHeader>
           <TableBody>
             {recipes?.map((recipe: any) => (
-              <TableRow key={recipe.id}>
-                <TableCell>{recipe.id}</TableCell>
-                <TableCell>{recipe.user}</TableCell>
-                <TableCell>
-                  {recipe.ingredients.map((ingredient: string, index: number) => (
-                    <div key={index}>
-                      <span className="font-semibold">{ingredient}</span>: {recipe.amounts[index]} {recipe.units[index]}
-                    </div>
-                  ))}
-                </TableCell>
-              </TableRow>
+              <RecipeRow key={recipe.id} recipe={recipe} />
             ))}
           </TableBody>
         </Table>

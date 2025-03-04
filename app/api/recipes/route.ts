@@ -54,3 +54,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
 }
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, amounts, units } = body;
+
+    console.log('PATCH Request received:', { id, amounts, units });
+
+    if (!id) {
+      return NextResponse.json({ error: 'Recipe ID is required' }, { status: 400 });
+    }
+
+    // Update the recipe in the "recipes" table
+    const supabase = await createClient();
+    
+    console.log('Sending update to Supabase:', { 
+      table: 'recipes',
+      id,
+      update: { amounts, units }
+    });
+    
+    const { data, error } = await supabase
+      .from('recipes')
+      .update({ amounts, units })
+      .eq('id', id)
+      .select();
+
+    console.log('Supabase response:', { data, error });
+
+    if (error) {
+      console.error('Supabase update error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('No rows updated even though no error occurred');
+      return NextResponse.json({ warning: 'No rows were updated', data }, { status: 200 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Exception in PATCH handler:', error);
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+}

@@ -30,10 +30,13 @@ export default function AddRecipeForm() {
 
   const searchIngredient = async (query: string) => {
     try {
-      const res = await fetch(`/api/recipes?q=${encodeURIComponent(query)}`);
+      // Create a URL object instead of using string concatenation with encodeURIComponent
+      const url = new URL('/api/recipes', window.location.origin);
+      url.searchParams.append('q', query);
+      
+      const res = await fetch(url.toString());
       if (res.ok) {
         const data = await res.json();
-        // Adjust according to the API's response structure; for instance:
         setSuggestions(data.foods || []); 
       } else {
         setSuggestions([]);
