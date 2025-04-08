@@ -99,3 +99,34 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json({ error: 'Recipe ID is required' }, { status: 400 });
+    }
+
+    // Delete the recipe from the "recipes" table
+    const supabase = await createClient();
+    
+    console.log('DELETE Request received:', { id });
+    
+    const { error } = await supabase
+      .from('recipes')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Supabase delete error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Exception in DELETE handler:', error);
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+}

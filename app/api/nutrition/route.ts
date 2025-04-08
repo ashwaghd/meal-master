@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { fdcIds } = body;
+    const { fdcIds, format = 'full' } = body;
     
     if (!fdcIds || !Array.isArray(fdcIds) || fdcIds.length === 0) {
       return NextResponse.json({ error: 'Valid fdcIds array is required' }, { status: 400 });
@@ -19,12 +19,12 @@ export async function POST(request: Request) {
       if (!fdcId) return null;
       
       const response = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/food/${fdcId}?api_key=${apiKey}`,
+        `https://api.nal.usda.gov/fdc/v1/food/${fdcId}?api_key=${apiKey}&format=${format}`,
         { method: 'GET' }
       );
 
       if (!response.ok) {
-        console.error(`Error fetching nutrition for fdcId ${fdcId}:`, response.status);
+        console.error(`Error fetching nutrition for fdcId ${fdcId}: ${response.status}`);
         return null;
       }
 
@@ -39,4 +39,4 @@ export async function POST(request: Request) {
     console.error('Error in nutrition API route:', error);
     return NextResponse.json({ error: 'Error fetching nutrition data' }, { status: 500 });
   }
-} 
+}

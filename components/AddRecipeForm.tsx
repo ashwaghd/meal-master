@@ -1,14 +1,25 @@
 // components/AddRecipeForm.tsx
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function AddRecipeForm() {
   const [user, setUser] = useState('');
-  const [ingredients, setIngredients] = useState([{ fdcId: null, ingredient: '', amount: '', unit: '' }]);
+  const [ingredients, setIngredients] = useState([{ fdcId: null, ingredient: '', amount: '', unit: 'g' }]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeRow, setActiveRow] = useState<number | null>(null);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (success) {
+      timer = setTimeout(() => {
+        setSuccess('');
+      }, 3000);
+    }
+    return () => clearTimeout(timer);
+  }, [success]);
 
   // Update a specific ingredient row field
   const handleIngredientChange = (index: number, field: string, value: string) => {
@@ -19,7 +30,7 @@ export default function AddRecipeForm() {
 
   // Add a new blank ingredient row
   const addIngredientRow = () => {
-    setIngredients([...ingredients, { fdcId: null, ingredient: '', amount: '', unit: '' }]);
+    setIngredients([...ingredients, { fdcId: null, ingredient: '', amount: '', unit: 'g' }]);
   };
 
   // Remove a specific ingredient row
@@ -51,6 +62,7 @@ export default function AddRecipeForm() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
 
     // Validate user ID is a number
     const userInt = parseInt(user, 10);
@@ -78,37 +90,62 @@ export default function AddRecipeForm() {
     }
 
     // Submit the form to our API endpoint
-    const res = await fetch('/api/recipes', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        user: userInt,
-        ingredients: ingredientNames,
-        fdcIds,
-        amounts,
-        units
-      })
-    });
+    try {
+      const res = await fetch('/api/recipes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user: userInt,
+          ingredients: ingredientNames,
+          fdcIds,
+          amounts,
+          units
+        })
+      });
 
-    if (!res.ok) {
-      const errorData = await res.json();
-      setError(errorData.error || 'Error inserting recipe.');
-    } else {
-      // Optionally clear the form or trigger a refresh of the recipes list
-      setUser('');
-      setIngredients([{ fdcId: null, ingredient: '', amount: '', unit: '' }]);
-      setError('');
-      // For Next.js App Router, you could use a refresh action here.
+      if (!res.ok) {
+        const errorData = await res.json();
+        setError(errorData.error || 'Error inserting recipe.');
+      } else {
+        // Set success message
+        setSuccess('Recipe added successfully!');
+        
+        // Clear the form
+        setUser('');
+        setIngredients([{ fdcId: null, ingredient: '', amount: '', unit: 'g' }]);
+        setError('');
+        
+        // Reload the page after 3 seconds to show the success message
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+      }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+      console.error('Error submitting recipe:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
     <form onSubmit={handleSubmit} className="mt-8 space-y-4">
       <h2 className="text-lg font-bold">Add New Recipe</h2>
-      {error && <div className="text-red-600">{error}</div>}
+      
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
+          <span className="block sm:inline">{success}</span>
+        </div>
+      )}
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
+      
       <div>
         <label className="block font-semibold">User ID:</label>
         <input
@@ -147,13 +184,18 @@ export default function AddRecipeForm() {
                 onChange={(e) => handleIngredientChange(index, 'amount', e.target.value)}
                 className="border p-2 rounded"
               />
-              <input
-                type="text"
-                placeholder="Unit"
+              
+              <select
                 value={row.unit}
                 onChange={(e) => handleIngredientChange(index, 'unit', e.target.value)}
                 className="border p-2 rounded"
-              />
+              >
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+                <option value="oz">oz</option>
+                <option value="lb">lb</option>
+              </select>
+              
               <button type="button" onClick={() => removeIngredientRow(index)} className="text-red-600">
                 Remove
               </button>

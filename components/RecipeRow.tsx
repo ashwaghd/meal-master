@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TableRow, TableCell } from '@/components/ui/table';
 import {
   Dialog,
@@ -38,6 +38,24 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
   const [nutritionData, setNutritionData] = useState<any[]>([]);
   const [nutritionLoading, setNutritionLoading] = useState(false);
   const [nutritionError, setNutritionError] = useState('');
+
+  // Add these state variables to your component
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Add a success state variable
+  const [success, setSuccess] = useState('');
+
+  // Add useEffect to auto-clear success messages
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (success) {
+      timer = setTimeout(() => {
+        setSuccess('');
+      }, 3000);
+    }
+    return () => clearTimeout(timer);
+  }, [success]);
 
   const handleEditToggle = () => {
     if (isEditing) {
@@ -99,6 +117,7 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
   const handleSave = async () => {
     setIsLoading(true);
     setError('');
+    setSuccess(''); // Reset success message
     try {
       console.log('Sending update request:', {
         id: recipe.id,
@@ -128,18 +147,25 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
       if (result.warning) {
         setError(result.warning);
       } else {
-        // Success - exit edit mode
+        // Success - show success message
+        setSuccess('Recipe updated successfully!');
+        
+        // Exit edit mode
         setIsEditing(false);
         
-        // Update local recipe data if available in response
+        // Update local state with server data
         if (result.data && result.data.length > 0) {
           const updatedRecipe = result.data[0];
-          // Update local state with server data
           setEditedRecipe({
             amounts: updatedRecipe.amounts,
             units: updatedRecipe.units
           });
         }
+        
+        // Reload the page after 3 seconds to show the success message
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
       }
     } catch (err: any) {
       console.error('Error updating recipe:', err);
@@ -164,6 +190,7 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
         return;
       }
       
+      // Update the API call to ensure we get the full format which includes food portions
       const response = await fetch('/api/nutrition', {
         method: 'POST',
         headers: {
@@ -171,6 +198,7 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
         },
         body: JSON.stringify({
           fdcIds: validFdcIds,
+          format: 'full' // Ensure we get full format
         }),
       });
 
@@ -194,7 +222,63 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
     fetchNutritionData();
   };
 
-  // Helper function to sum up nutrient values across ingredients
+  // Updating the convertToGrams function to use foodPortions from the API
+  const convertToGrams = (amount: number, unit: string, foodData: any): number => {
+    // First, handle standard weight units
+    unit = unit.toLowerCase().trim();
+    
+    // Mass unit conversions to grams
+    const unitToGramMap: Record<string, number> = {
+      'g': 1,
+      'gram': 1,
+      'grams': 1,
+      'kg': 1000,
+      'kilogram': 1000,
+      'kilograms': 1000,
+      'oz': 28.35,
+      'ounce': 28.35,
+      'ounces': 28.35,
+      'lb': 453.592,
+      'pound': 453.592,
+      'pounds': 453.592
+    };
+
+    // If it's a standard weight unit, do a direct conversion
+    if (unitToGramMap[unit]) {
+      return amount * unitToGramMap[unit];
+    }
+    
+    // If we have foodData with foodPortions, try to find a matching portion
+    if (foodData && foodData.foodPortions && foodData.foodPortions.length > 0) {
+      // Log available portions for debugging
+      console.log(`Available portions for ${foodData.description}:`, 
+        foodData.foodPortions.map((p: any) => `${p.portionDescription}: ${p.gramWeight}g`));
+      
+      // Try to find an exact match first (e.g., "cup" matches "1 cup")
+      const exactMatch = foodData.foodPortions.find((portion: any) => 
+        portion.portionDescription && 
+        portion.portionDescription.toLowerCase().includes(unit)
+      );
+      
+      if (exactMatch && exactMatch.gramWeight) {
+        console.log(`Found exact portion match: ${exactMatch.portionDescription} = ${exactMatch.gramWeight}g`);
+        return amount * exactMatch.gramWeight;
+      }
+      
+      // If no exact match, use the first portion as fallback (better than nothing)
+      if (foodData.foodPortions[0].gramWeight) {
+        const defaultPortion = foodData.foodPortions[0];
+        console.log(`Using default portion: ${defaultPortion.portionDescription} = ${defaultPortion.gramWeight}g`);
+        return amount * defaultPortion.gramWeight;
+      }
+    }
+    
+    // If we get here, we couldn't find a conversion - use weight as-is (assuming grams)
+    console.log(`Warning: Could not convert ${unit} to grams. Assuming grams.`);
+    return amount;
+  };
+
+  // Update the getTotalNutrientValue function to use the improved converter
   const getTotalNutrientValue = (nutrientName: string) => {
     let total = 0;
     
@@ -204,14 +288,46 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
       );
       
       if (nutrient) {
-        // Apply the appropriate quantity based on recipe amounts
-        const amount = recipe.amounts[index] || 1;
+        // Get the original or scaled amount
+        let amount = recipe.amounts[index] || 1;
+        if (isScaling) {
+          amount = amount * scaleFactor;
+        }
+        
+        // Convert to grams using the enhanced function
+        const amountInGrams = convertToGrams(amount, recipe.units[index], food);
+        
+        // USDA provides values per 100g
         const value = nutrient.amount || 0;
-        total += value * amount;
+        total += (amountInGrams / 100) * value;
       }
     });
     
     return total.toFixed(2);
+  };
+
+  // Add this function to handle deletion
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/recipes?id=${recipe.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete recipe');
+      }
+      
+      // On successful deletion, refresh the page to show updated list
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Error deleting recipe:', err);
+      setError(err.message);
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -223,7 +339,20 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
         <TableCell>{recipe.user}</TableCell>
         <TableCell>
           <div className="space-y-2">
-            {error && <div className="text-red-500 text-sm">{error}</div>}
+            {/* Success notification */}
+            {success && (
+              <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
+                <span className="block sm:inline">{success}</span>
+              </div>
+            )}
+            
+            {/* Error notification - update styling to match */}
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
+            
             <div className="flex justify-between items-center">
               <h3 className="font-medium">Ingredients:</h3>
               <div className="flex gap-2">
@@ -291,6 +420,13 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                     {isLoading ? 'Saving...' : 'Save'}
                   </button>
                 )}
+                
+                <button 
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-3 py-1.5 rounded text-sm bg-red-600 text-white hover:bg-red-700"
+                >
+                  Remove
+                </button>
               </div>
             </div>
             
@@ -308,12 +444,16 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                         onChange={(e) => handleAmountChange(index, e.target.value)}
                         className="border rounded px-1 py-0.5 w-20 text-sm"
                       />
-                      <input
-                        type="text"
+                      <select
                         value={editedRecipe.units[index]}
                         onChange={(e) => handleUnitChange(index, e.target.value)}
                         className="border rounded px-1 py-0.5 w-20 text-sm"
-                      />
+                      >
+                        <option value="g">g</option>
+                        <option value="kg">kg</option>
+                        <option value="oz">oz</option>
+                        <option value="lb">lb</option>
+                      </select>
                     </div>
                   ) : (
                     <span>
@@ -335,9 +475,11 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
       <Dialog open={nutritionModalOpen} onOpenChange={setNutritionModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Nutritional Information</DialogTitle>
+            <DialogTitle>
+              {isScaling ? `Nutritional Information (Scaled ${scaleFactor}x)` : 'Nutritional Information'}
+            </DialogTitle>
             <DialogDescription>
-              Nutritional details for all ingredients in your recipe.
+              Nutritional details for {isScaling ? 'scaled' : 'all'} ingredients in your recipe.
             </DialogDescription>
           </DialogHeader>
           
@@ -409,6 +551,32 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                 No nutrition data available for this recipe.
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this recipe? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="px-4 py-2 border rounded text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="px-4 py-2 rounded text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </button>
           </div>
         </DialogContent>
       </Dialog>
