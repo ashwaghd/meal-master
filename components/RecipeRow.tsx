@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TableRow, TableCell } from '@/components/ui/table';
 import {
   Dialog,
@@ -8,11 +8,13 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
+import { createPortal } from 'react-dom';
 
 type RecipeRowProps = {
   recipe: {
     id: number;
-    user: number;
+    // user property can be removed or kept in the type but not displayed
+    // user: string; // This is now a UUID but we don't need to display it
     ingredients: string[];
     amounts: number[];
     units: string[];
@@ -46,6 +48,22 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
   // Add a success state variable
   const [success, setSuccess] = useState('');
 
+  // Add these new state variables at the top of your component
+  const [isConverting, setIsConverting] = useState(false);
+  const [targetUnit, setTargetUnit] = useState('g');
+
+  // Add this state to manage the dropdown
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Add this state to track dropdown position
+  const [showAbove, setShowAbove] = useState(false);
+
+  // Add this ref to the action button
+  const actionButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Add this state for portal rendering
+  const [dropdownCoordinates, setDropdownCoordinates] = useState({ top: 0, left: 0, width: 0 });
+
   // Add useEffect to auto-clear success messages
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -58,33 +76,31 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
   }, [success]);
 
   const handleEditToggle = () => {
-    if (isEditing) {
-      // If we're exiting edit mode without saving, reset to original values
+    // First turn everything off if we're enabling edit mode
+    if (!isEditing) {
+      setIsConverting(false);
+      setIsScaling(false);
+    } else {
+      // If we're exiting edit mode, reset to original values
       setEditedRecipe({
         amounts: [...recipe.amounts],
         units: [...recipe.units]
       });
     }
+    // Toggle edit mode
     setIsEditing(!isEditing);
-    
-    // Exit scaling mode if entering edit mode
-    if (!isEditing) {
-      setIsScaling(false);
-    }
   };
 
   const handleScaleToggle = () => {
-    setIsScaling(!isScaling);
-    
-    // Reset scale factor when toggling
+    // First turn everything off if we're enabling scale mode
     if (!isScaling) {
+      setIsConverting(false);
+      setIsEditing(false);
+      // Reset scale factor when entering scale mode
       setScaleFactor(1);
     }
-    
-    // Exit edit mode if entering scaling mode
-    if (!isScaling) {
-      setIsEditing(false);
-    }
+    // Toggle scale mode
+    setIsScaling(!isScaling);
   };
 
   const handleScaleFactorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -330,13 +346,128 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
     }
   };
 
+  // Add this conversion function
+  const convertUnits = (amount: number, fromUnit: string, toUnit: string): number => {
+    // Convert everything to grams first
+    const unitToGramMap: Record<string, number> = {
+      'g': 1,
+      'kg': 1000,
+      'oz': 28.35,
+      'lb': 453.592
+    };
+    
+    // First convert to grams
+    const amountInGrams = amount * (unitToGramMap[fromUnit.toLowerCase()] || 1);
+    
+    // Then convert to target unit
+    const convertedAmount = amountInGrams / (unitToGramMap[toUnit.toLowerCase()] || 1);
+    
+    return convertedAmount;
+  };
+
+  // Add this handler to convert all units
+  const handleConvertAll = async () => {
+    if (!targetUnit) return;
+    
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+    
+    try {
+      const newAmounts = [...recipe.amounts];
+      const newUnits = [...recipe.units];
+      
+      // Convert each amount to the new unit
+      recipe.units.forEach((unit, index) => {
+        if (unit !== targetUnit) {
+          newAmounts[index] = convertUnits(recipe.amounts[index], unit, targetUnit);
+          newUnits[index] = targetUnit;
+        }
+      });
+      
+      // Update the recipe with converted values
+      const response = await fetch('/api/recipes', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: recipe.id,
+          amounts: newAmounts,
+          units: newUnits,
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update recipe');
+      }
+      
+      setSuccess(`All units converted to ${targetUnit}`);
+      
+      // Update local state
+      setEditedRecipe({
+        amounts: newAmounts,
+        units: newUnits
+      });
+      
+      // Reset conversion mode
+      setIsConverting(false);
+      
+      // Reload the page after 3 seconds
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+      
+    } catch (err: any) {
+      console.error('Error converting units:', err);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update the handleConvertToggle function to ensure other modes are turned off
+  const handleConvertToggle = () => {
+    // First turn everything off if we're enabling convert mode
+    if (!isConverting) {
+      setIsEditing(false);
+      setIsScaling(false);
+    }
+    // Toggle convert mode
+    setIsConverting(!isConverting);
+  };
+
+  // Update the toggleMenu function to calculate exact coordinates
+  const toggleMenu = () => {
+    if (!menuOpen && actionButtonRef.current) {
+      const buttonRect = actionButtonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - buttonRect.bottom;
+      
+      setDropdownCoordinates({
+        // If not enough space below, position above
+        top: spaceBelow < 200 ? buttonRect.top - 10 : buttonRect.bottom + 10,
+        left: buttonRect.left,
+        width: buttonRect.width
+      });
+      
+      setShowAbove(spaceBelow < 200);
+    }
+    
+    setMenuOpen(!menuOpen);
+  };
+
+  // Add this function to close the menu
+  const closeMenu = () => {
+    setMenuOpen(false);
+  };
+
   return (
     <>
-      <TableRow 
-        className=""
-      >
+      <TableRow>
         <TableCell>{recipe.id}</TableCell>
-        <TableCell>{recipe.user}</TableCell>
         <TableCell>
           <div className="space-y-2">
             {/* Success notification */}
@@ -346,128 +477,221 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
               </div>
             )}
             
-            {/* Error notification - update styling to match */}
+            {/* Error notification */}
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
                 <span className="block sm:inline">{error}</span>
               </div>
             )}
             
-            <div className="flex justify-between items-center">
-              <h3 className="font-medium">Ingredients:</h3>
-              <div className="flex gap-2">
-                <button 
-                  onClick={handleNutritionModalOpen}
-                  className="hidden"
-                >
-                  Debug: Open Modal
-                </button>
+            <div className="flex items-center">
+              <div className="flex-grow">
+                <h3 className="font-medium mb-2">Ingredients:</h3>
                 
-                <button 
-                  onClick={handleNutritionModalOpen}
-                  className="px-3 py-1.5 rounded text-sm bg-teal-600 text-white hover:bg-teal-700"
-                >
-                  View
-                </button>
-                
-                {isScaling ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <label htmlFor={`scale-${recipe.id}`} className="text-sm">Scale:</label>
-                      <input
-                        id={`scale-${recipe.id}`}
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={scaleFactor}
-                        onChange={handleScaleFactorChange}
-                        className="border rounded px-1 py-0.5 w-16 text-sm"
-                      />
-                    </div>
+                {/* Action mode containers */}
+                {isConverting && (
+                  <div className="mt-2 p-2 bg-transparent rounded border flex items-center gap-2">
+                    <span className="text-sm font-medium">Convert all units to:</span>
+                    <select
+                      id={`convert-${recipe.id}`}
+                      value={targetUnit}
+                      onChange={(e) => setTargetUnit(e.target.value)}
+                      className="border rounded px-2 py-1 text-sm"
+                    >
+                      <option value="g">g</option>
+                      <option value="kg">kg</option>
+                      <option value="oz">oz</option>
+                      <option value="lb">lb</option>
+                    </select>
+                    <div className="flex-grow"></div>
+                    <button 
+                      onClick={handleConvertAll}
+                      disabled={isLoading}
+                      className="px-3 py-1 rounded text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isLoading ? 'Converting...' : 'Apply'}
+                    </button>
+                    <button 
+                      onClick={handleConvertToggle}
+                      className="px-3 py-1 rounded text-sm bg-gray-600 text-white hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {isScaling && (
+                  <div className="mt-2 p-2 bg-transparent rounded border flex items-center gap-2">
+                    <span className="text-sm font-medium">Scale by factor:</span>
+                    <input
+                      id={`scale-${recipe.id}`}
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={scaleFactor}
+                      onChange={handleScaleFactorChange}
+                      className="border rounded px-2 py-1 w-20 text-sm"
+                    />
+                    <div className="flex-grow"></div>
                     <button 
                       onClick={handleScaleToggle}
-                      className="px-3 py-1.5 rounded text-sm bg-gray-600 text-white hover:bg-gray-700"
+                      className="px-3 py-1 rounded text-sm bg-gray-600 text-white hover:bg-gray-700"
                     >
-                      Reset
+                      Exit Scale Mode
                     </button>
-                  </>
-                ) : (
-                  <button 
-                    onClick={handleScaleToggle}
-                    className="px-3 py-1.5 rounded text-sm bg-purple-600 text-white hover:bg-purple-700"
-                  >
-                    Scale
-                  </button>
+                  </div>
                 )}
-                
-                <button 
-                  onClick={handleEditToggle}
-                  className={`px-3 py-1.5 rounded text-sm ${
-                    isEditing 
-                      ? 'bg-red-600 text-white hover:bg-red-700' 
-                      : 'bg-yellow-600 text-white hover:bg-yellow-700'
-                  }`}
-                >
-                  {isEditing ? 'Cancel' : 'Edit'}
-                </button>
-                
+
                 {isEditing && (
-                  <button 
-                    onClick={handleSave}
-                    disabled={isLoading}
-                    className="px-3 py-1.5 rounded text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isLoading ? 'Saving...' : 'Save'}
-                  </button>
+                  <div className="mt-2 p-2 bg-transparent rounded border flex items-center gap-2">
+                    <span className="text-sm font-medium">Editing Mode</span>
+                    <div className="flex-grow"></div>
+                    <button 
+                      onClick={handleSave}
+                      disabled={isLoading}
+                      className="px-3 py-1 rounded text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isLoading ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button 
+                      onClick={handleEditToggle}
+                      className="px-3 py-1 rounded text-sm bg-gray-600 text-white hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
                 
-                <button 
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="px-3 py-1.5 rounded text-sm bg-red-600 text-white hover:bg-red-700"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-            
-            <ul className="list-disc list-inside space-y-1">
-              {recipe.ingredients.map((ingredient: string, index: number) => (
-                <li key={index} className={isEditing ? "flex items-center gap-2" : ""}>
-                  {isEditing ? (
-                    <div className="flex items-center gap-2 w-full">
-                      <span>{ingredient}</span>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={editedRecipe.amounts[index]}
-                        onChange={(e) => handleAmountChange(index, e.target.value)}
-                        className="border rounded px-1 py-0.5 w-20 text-sm"
-                      />
-                      <select
-                        value={editedRecipe.units[index]}
-                        onChange={(e) => handleUnitChange(index, e.target.value)}
-                        className="border rounded px-1 py-0.5 w-20 text-sm"
-                      >
-                        <option value="g">g</option>
-                        <option value="kg">kg</option>
-                        <option value="oz">oz</option>
-                        <option value="lb">lb</option>
-                      </select>
-                    </div>
-                  ) : (
-                    <span>
-                      {ingredient} - {isScaling ? getScaledAmount(recipe.amounts[index]) : recipe.amounts[index].toFixed(2)} {recipe.units[index]}
-                      {isScaling && scaleFactor !== 1 && (
-                        <span className="text-gray-500 text-xs ml-1">
-                          (original: {recipe.amounts[index].toFixed(2)})
+                <ul className="list-disc list-inside space-y-1 mt-2">
+                  {recipe.ingredients.map((ingredient: string, index: number) => (
+                    <li key={index} className={isEditing ? "flex items-center gap-2" : ""}>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 w-full">
+                          <span>{ingredient}</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            value={editedRecipe.amounts[index]}
+                            onChange={(e) => handleAmountChange(index, e.target.value)}
+                            className="border rounded px-1 py-0.5 w-20 text-sm"
+                          />
+                          <select
+                            value={editedRecipe.units[index]}
+                            onChange={(e) => handleUnitChange(index, e.target.value)}
+                            className="border rounded px-1 py-0.5 w-20 text-sm"
+                          >
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                            <option value="oz">oz</option>
+                            <option value="lb">lb</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <span>
+                          {ingredient} - {isScaling ? getScaledAmount(recipe.amounts[index]) : recipe.amounts[index].toFixed(2)} {recipe.units[index]}
+                          {isScaling && scaleFactor !== 1 && (
+                            <span className="text-gray-500 text-xs ml-1">
+                              (original: {recipe.amounts[index].toFixed(2)})
+                            </span>
+                          )}
                         </span>
                       )}
-                    </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              
+              {/* Actions button in a separate div for centering */}
+              <div className="pl-4 flex items-center self-center">
+                <div className="relative">
+                  <button 
+                    ref={actionButtonRef}
+                    onClick={toggleMenu}
+                    className="px-3 py-1.5 rounded text-sm bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    Actions ▼
+                  </button>
+                  
+                  {menuOpen && (
+                    <>
+                      {/* Invisible overlay */}
+                      <div 
+                        className="fixed inset-0 z-50" 
+                        onClick={closeMenu}
+                      ></div>
+                      
+                      {/* Portal for dropdown */}
+                      {typeof window !== 'undefined' && createPortal(
+                        <div 
+                          style={{
+                            position: 'fixed',
+                            top: `${dropdownCoordinates.top}px`,
+                            left: `${dropdownCoordinates.left}px`,
+                            width: '224px', // Fixed width of 56*4=224px
+                            zIndex: 9999,
+                          }}
+                          className="rounded-md shadow-lg bg-white"
+                        >
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                handleNutritionModalOpen();
+                                closeMenu();
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              View Nutrition
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                handleConvertToggle();
+                                closeMenu();
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              Convert Units
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                handleScaleToggle();
+                                closeMenu();
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              Scale Recipe
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                handleEditToggle();
+                                closeMenu();
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              {isEditing ? 'Cancel Edit' : 'Edit Recipe'}
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setShowDeleteConfirm(true);
+                                closeMenu();
+                              }}
+                              className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-100"
+                            >
+                              Remove Recipe
+                            </button>
+                          </div>
+                        </div>,
+                        document.body
+                      )}
+                    </>
                   )}
-                </li>
-              ))}
-            </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </TableCell>
       </TableRow>

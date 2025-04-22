@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 
 export default function AddRecipeForm() {
-  const [user, setUser] = useState('');
   const [ingredients, setIngredients] = useState([{ fdcId: null, ingredient: '', amount: '', unit: 'g' }]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -64,14 +63,6 @@ export default function AddRecipeForm() {
     setError('');
     setSuccess('');
 
-    // Validate user ID is a number
-    const userInt = parseInt(user, 10);
-    if (isNaN(userInt)) {
-      setError('User must be a valid number.');
-      setLoading(false);
-      return;
-    }
-
     // Prepare arrays for ingredients, USDA IDs, amounts, and units
     const ingredientNames = ingredients.map(row => row.ingredient);
     const fdcIds = ingredients.map(row => row.fdcId);
@@ -97,7 +88,6 @@ export default function AddRecipeForm() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          user: userInt,
           ingredients: ingredientNames,
           fdcIds,
           amounts,
@@ -113,7 +103,6 @@ export default function AddRecipeForm() {
         setSuccess('Recipe added successfully!');
         
         // Clear the form
-        setUser('');
         setIngredients([{ fdcId: null, ingredient: '', amount: '', unit: 'g' }]);
         setError('');
         
@@ -146,15 +135,6 @@ export default function AddRecipeForm() {
         </div>
       )}
       
-      <div>
-        <label className="block font-semibold">User ID:</label>
-        <input
-          type="number"
-          value={user}
-          onChange={(e) => setUser(e.target.value)}
-          className="border p-2 rounded w-full"
-        />
-      </div>
       <div>
         <h3 className="font-semibold">Ingredients</h3>
         {ingredients.map((row, index) => (

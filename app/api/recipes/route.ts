@@ -37,12 +37,19 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { user, ingredients, amounts, units, fdcIds } = body;
-
-    // Insert the new recipe into the "recipes" table
+    const { ingredients, amounts, units, fdcIds } = body;
+    
     const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    
+    const userId = user.id;
+
     const { data, error } = await supabase.from('recipes').insert([
-      { user, ingredients, amounts, units, fdcIds }
+      { user: userId, ingredients, amounts, units, fdcIds }
     ]);
 
     if (error) {
@@ -60,20 +67,16 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { id, amounts, units } = body;
 
-    console.log('PATCH Request received:', { id, amounts, units });
-
     if (!id) {
       return NextResponse.json({ error: 'Recipe ID is required' }, { status: 400 });
     }
 
-    // Update the recipe in the "recipes" table
     const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     
-    console.log('Sending update to Supabase:', { 
-      table: 'recipes',
-      id,
-      update: { amounts, units }
-    });
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     
     const { data, error } = await supabase
       .from('recipes')
@@ -81,16 +84,13 @@ export async function PATCH(request: Request) {
       .eq('id', id)
       .select();
 
-    console.log('Supabase response:', { data, error });
-
     if (error) {
       console.error('Supabase update error:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (!data || data.length === 0) {
-      console.warn('No rows updated even though no error occurred');
-      return NextResponse.json({ warning: 'No rows were updated', data }, { status: 200 });
+      return NextResponse.json({ warning: 'No rows were updated. Recipe may not belong to you.' }, { status: 403 });
     }
 
     return NextResponse.json({ data });
@@ -109,10 +109,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Recipe ID is required' }, { status: 400 });
     }
 
-    // Delete the recipe from the "recipes" table
     const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     
-    console.log('DELETE Request received:', { id });
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     
     const { error } = await supabase
       .from('recipes')
