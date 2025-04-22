@@ -23,7 +23,7 @@ export const signUpAction = async (formData: FormData) => {
     email,
     password,
     options: {
-      emailRedirectTo: `${origin}/auth/callback`,
+      emailRedirectTo: `${origin}/recipes`,
     },
   });
 
@@ -31,6 +31,15 @@ export const signUpAction = async (formData: FormData) => {
     console.error(error.code + " " + error.message);
     return encodedRedirect("error", "/sign-up", error.message);
   } else {
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (!signInError) {
+      return redirect("/recipes");
+    }
+    
     return encodedRedirect(
       "success",
       "/sign-up",
@@ -53,7 +62,7 @@ export const signInAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-in", error.message);
   }
 
-  return redirect("/protected");
+  return redirect("/recipes");
 };
 
 export const forgotPasswordAction = async (formData: FormData) => {

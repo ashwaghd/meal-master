@@ -19,6 +19,6 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}${redirectTo}`);
   }
 
-  // URL to redirect to after sign up process completes
-  return NextResponse.redirect(`${origin}/protected`);
+  // Redirect to recipes page after successful authentication
+  return NextResponse.redirect(new URL('/recipes', requestUrl.origin));
 }
