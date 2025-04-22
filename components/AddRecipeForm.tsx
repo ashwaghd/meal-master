@@ -138,7 +138,7 @@ export default function AddRecipeForm() {
       <div>
         <h3 className="font-semibold">Ingredients</h3>
         {ingredients.map((row, index) => (
-          <div key={index} className="flex flex-col">
+          <div key={index} className="flex flex-col relative">
             <div className="flex space-x-2 items-center py-2">
               <input
                 type="text"
@@ -181,7 +181,14 @@ export default function AddRecipeForm() {
               </button>
             </div>
             {activeRow === index && suggestions.length > 0 && (
-              <div className="border bg-gray-50 shadow max-h-40 overflow-y-auto text-gray-900">
+              <div 
+                className="absolute z-50 border bg-gray-50 shadow overflow-y-auto text-gray-900"
+                style={{
+                  width: "300px",
+                  maxHeight: "200px",
+                  left: "0"
+                }}
+              >
                 {suggestions.map((suggestion: any) => (
                   <div
                     key={suggestion.fdcId}

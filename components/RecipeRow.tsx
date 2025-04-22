@@ -64,6 +64,9 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
   // Add this state for portal rendering
   const [dropdownCoordinates, setDropdownCoordinates] = useState({ top: 0, left: 0, width: 0 });
 
+  // Add this state for individual conversion
+  const [convertIndices, setConvertIndices] = useState<Record<number, string>>({});
+
   // Add useEffect to auto-clear success messages
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -464,11 +467,59 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
     setMenuOpen(false);
   };
 
+  // Add this function to handle individual conversion
+  const handleConvertIndividual = (index: number) => {
+    if (!convertIndices[index]) return;
+    
+    const newAmounts = [...editedRecipe.amounts];
+    const newUnits = [...editedRecipe.units];
+    
+    // Convert the amount based on current unit to target unit
+    const convertedAmount = convertAmount(
+      recipe.amounts[index],
+      recipe.units[index],
+      convertIndices[index]
+    );
+    
+    newAmounts[index] = convertedAmount;
+    newUnits[index] = convertIndices[index];
+    
+    setEditedRecipe({
+      amounts: newAmounts,
+      units: newUnits
+    });
+    
+    // Clear the conversion after applying
+    const newConvertIndices = { ...convertIndices };
+    delete newConvertIndices[index];
+    setConvertIndices(newConvertIndices);
+    
+    setSuccess(`Converted ${recipe.ingredients[index]} to ${convertIndices[index]}`);
+  };
+
+  // Add the convertAmount helper function
+  const convertAmount = (amount: number, fromUnit: string, toUnit: string): number => {
+    // Convert everything to grams first
+    let grams = amount;
+    
+    if (fromUnit === 'kg') grams = amount * 1000;
+    else if (fromUnit === 'oz') grams = amount * 28.35;
+    else if (fromUnit === 'lb') grams = amount * 453.59;
+    
+    // Then convert from grams to target unit
+    if (toUnit === 'g') return parseFloat(grams.toFixed(2));
+    if (toUnit === 'kg') return parseFloat((grams / 1000).toFixed(2));
+    if (toUnit === 'oz') return parseFloat((grams / 28.35).toFixed(2));
+    if (toUnit === 'lb') return parseFloat((grams / 453.59).toFixed(2));
+    
+    return amount; // Fallback
+  };
+
   return (
     <>
-      <TableRow>
-        <TableCell>{recipe.id}</TableCell>
-        <TableCell>
+    <TableRow>
+      <TableCell>{recipe.id}</TableCell>
+      <TableCell>
           <div className="space-y-2">
             {/* Success notification */}
             {success && (
@@ -523,12 +574,12 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                 {isScaling && (
                   <div className="mt-2 p-2 bg-transparent rounded border flex items-center gap-2">
                     <span className="text-sm font-medium">Scale by factor:</span>
-                    <input
+          <input
                       id={`scale-${recipe.id}`}
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={scaleFactor}
+            type="number"
+            min="0.1"
+            step="0.1"
+            value={scaleFactor}
                       onChange={handleScaleFactorChange}
                       className="border rounded px-2 py-1 w-20 text-sm"
                     />
@@ -559,15 +610,56 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                     >
                       Cancel
                     </button>
-                  </div>
+        </div>
                 )}
                 
                 <ul className="list-disc list-inside space-y-1 mt-2">
-                  {recipe.ingredients.map((ingredient: string, index: number) => (
-                    <li key={index} className={isEditing ? "flex items-center gap-2" : ""}>
-                      {isEditing ? (
-                        <div className="flex items-center gap-2 w-full">
-                          <span>{ingredient}</span>
+        {recipe.ingredients.map((ingredient: string, index: number) => (
+                    <li key={index} className="flex items-center gap-2 py-1">
+                      <span className="flex-grow">
+                        {ingredient} - {isScaling ? getScaledAmount(recipe.amounts[index]) : recipe.amounts[index].toFixed(2)} {recipe.units[index]}
+                        {isScaling && scaleFactor !== 1 && (
+                          <span className="text-gray-500 text-xs ml-1">
+                            (original: {recipe.amounts[index].toFixed(2)})
+                          </span>
+                        )}
+                      </span>
+                      
+                      {isConverting && (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={convertIndices[index] || ''}
+                            onChange={(e) => {
+                              const newConvertIndices = { ...convertIndices };
+                              if (e.target.value) {
+                                newConvertIndices[index] = e.target.value;
+                              } else {
+                                delete newConvertIndices[index];
+                              }
+                              setConvertIndices(newConvertIndices);
+                            }}
+                            className="border rounded px-1 py-0.5 text-sm w-16"
+                          >
+                            <option value="">Unit</option>
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                            <option value="oz">oz</option>
+                            <option value="lb">lb</option>
+                          </select>
+                          
+                          {convertIndices[index] && (
+                            <button
+                              onClick={() => handleConvertIndividual(index)}
+                              className="px-2 py-0.5 rounded text-xs bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              Convert
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      
+                      {isEditing && (
+                        <div className="flex items-center gap-2">
                           <input
                             type="number"
                             step="0.1"
@@ -579,7 +671,7 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                           <select
                             value={editedRecipe.units[index]}
                             onChange={(e) => handleUnitChange(index, e.target.value)}
-                            className="border rounded px-1 py-0.5 w-20 text-sm"
+                            className="border rounded px-1 py-0.5 w-16 text-sm"
                           >
                             <option value="g">g</option>
                             <option value="kg">kg</option>
@@ -587,15 +679,6 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
                             <option value="lb">lb</option>
                           </select>
                         </div>
-                      ) : (
-                        <span>
-                          {ingredient} - {isScaling ? getScaledAmount(recipe.amounts[index]) : recipe.amounts[index].toFixed(2)} {recipe.units[index]}
-                          {isScaling && scaleFactor !== 1 && (
-                            <span className="text-gray-500 text-xs ml-1">
-                              (original: {recipe.amounts[index].toFixed(2)})
-                            </span>
-                          )}
-                        </span>
                       )}
                     </li>
                   ))}
@@ -693,8 +776,8 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
               </div>
             </div>
           </div>
-        </TableCell>
-      </TableRow>
+      </TableCell>
+    </TableRow>
 
       <Dialog open={nutritionModalOpen} onOpenChange={setNutritionModalOpen}>
         <DialogContent className="max-w-2xl">
