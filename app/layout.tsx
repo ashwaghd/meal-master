@@ -1,10 +1,10 @@
 import { EnvVarWarning } from "@/components/env-var-warning";
 import HeaderAuth from "@/components/header-auth";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { ThemeSensitiveLogo } from "@/components/theme-sensitive-logo";
 import { hasEnvVars } from "@/utils/supabase/check-env-vars";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
-import Link from "next/link";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -40,15 +40,9 @@ export default function RootLayout({
             <div className="flex-1 w-full flex flex-col gap-20 items-center">
               <nav className="w-full flex justify-center border-b border-b-foreground/10 h-20">
                 <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
-                <div className="flex gap-5 items-center font-semibold">
-                  <Link href={"/"} className="flex items-center">
-                    <img 
-                      src="/meal-master-logo.png" 
-                      alt="Meal-Master by Ash Wagner" 
-                      className="w-20 object-contain" 
-                    />
-                  </Link>
-                </div>
+                  <div className="flex gap-5 items-center font-semibold">
+                    <ThemeSensitiveLogo />
+                  </div>
                   {!hasEnvVars ? <EnvVarWarning /> : <HeaderAuth />}
                 </div>
               </nav>
