@@ -467,34 +467,67 @@ export default function RecipeRow({ recipe }: RecipeRowProps) {
     setMenuOpen(false);
   };
 
-  // Add this function to handle individual conversion
-  const handleConvertIndividual = (index: number) => {
+  // Update the handleConvertIndividual function to reload after success
+  const handleConvertIndividual = async (index: number) => {
     if (!convertIndices[index]) return;
     
-    const newAmounts = [...editedRecipe.amounts];
-    const newUnits = [...editedRecipe.units];
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
     
-    // Convert the amount based on current unit to target unit
-    const convertedAmount = convertAmount(
-      recipe.amounts[index],
-      recipe.units[index],
-      convertIndices[index]
-    );
-    
-    newAmounts[index] = convertedAmount;
-    newUnits[index] = convertIndices[index];
-    
-    setEditedRecipe({
-      amounts: newAmounts,
-      units: newUnits
-    });
-    
-    // Clear the conversion after applying
-    const newConvertIndices = { ...convertIndices };
-    delete newConvertIndices[index];
-    setConvertIndices(newConvertIndices);
-    
-    setSuccess(`Converted ${recipe.ingredients[index]} to ${convertIndices[index]}`);
+    try {
+      const newAmounts = [...editedRecipe.amounts];
+      const newUnits = [...editedRecipe.units];
+      
+      // Convert the amount based on current unit to target unit
+      const convertedAmount = convertAmount(
+        recipe.amounts[index],
+        recipe.units[index],
+        convertIndices[index]
+      );
+      
+      newAmounts[index] = convertedAmount;
+      newUnits[index] = convertIndices[index];
+      
+      // Save changes to database
+      const response = await fetch('/api/recipes', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: recipe.id,
+          amounts: newAmounts,
+          units: newUnits,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update recipe');
+      }
+      
+      // Update local state
+      setEditedRecipe({
+        amounts: newAmounts,
+        units: newUnits
+      });
+      
+      // Clear the conversion selection
+      const newConvertIndices = { ...convertIndices };
+      delete newConvertIndices[index];
+      setConvertIndices(newConvertIndices);
+      
+      setSuccess(`Converted ${recipe.ingredients[index]} to ${convertIndices[index]}`);
+      
+      // Reload after 3 seconds to refresh with updated data
+      setTimeout(() => window.location.reload(), 3000);
+    } catch (err: any) {
+      console.error('Error converting unit:', err);
+      setError(err.message || 'Failed to save conversion');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Add the convertAmount helper function
