@@ -1,3 +1,4 @@
+![Screenshot from 2025-04-29 16-11-19](https://github.com/user-attachments/assets/ce088c86-a1c7-4d34-843b-95795aa04c0d)
 # Meal-Master – Recipe Management App
 
 **Live Demo:** [https://meal-master-sand.vercel.app](https://meal-master-sand.vercel.app)
